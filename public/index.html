@@ -2,91 +2,83 @@
 <html lang="ar">
 <head>
   <meta charset="UTF-8">
-  <title>XO Multiplayer</title>
+  <title>XO Game</title>
   <style>
-    body { font-family: Arial; text-align: center; background: #f0f0f0; }
-    h1 { margin-top: 20px; }
-    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; justify-content: center; margin: 20px auto; }
+    body { text-align: center; font-family: sans-serif; }
+    .board { display: grid; grid-template-columns: repeat(3, 100px); margin: auto; gap: 5px; margin-top: 20px; }
     .cell {
-      width: 100px; height: 100px;
-      background: white; border: 2px solid #ccc;
-      font-size: 40px; display: flex;
-      align-items: center; justify-content: center;
-      cursor: pointer;
+      width: 100px; height: 100px; font-size: 40px;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid #333; cursor: pointer;
     }
-    #status { margin-top: 20px; font-size: 18px; }
+    .disabled { pointer-events: none; background: #eee; }
   </style>
 </head>
 <body>
-  <h1>لعبة XO جماعية</h1>
-  <div id="status">جاري الاتصال بالخادم...</div>
-  <div id="board"></div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const board = document.getElementById("board");
-    const status = document.getElementById("status");
-    let mark = "";
-    let canPlay = false;
+<h1>لعبة XO</h1>
+<p id="status">جاري الاتصال...</p>
 
-    for (let i = 0; i < 9; i++) {
-      const cell = document.createElement("div");
-      cell.classList.add("cell");
-      cell.dataset.index = i;
-      board.appendChild(cell);
+<div class="board" id="board"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const board = document.getElementById("board");
+const status = document.getElementById("status");
+
+let mark = "";
+let myTurn = false;
+
+// إنشاء مربعات اللوحة
+for (let i = 0; i < 9; i++) {
+  const cell = document.createElement("div");
+  cell.classList.add("cell");
+  cell.dataset.index = i;
+  cell.addEventListener("click", () => {
+    if (myTurn && cell.textContent === "") {
+      socket.emit("makeMove", parseInt(cell.dataset.index));
     }
+  });
+  board.appendChild(cell);
+}
 
-    socket.on("waiting", () => {
-      status.textContent = "في انتظار لاعب آخر...";
-    });
+socket.on("waiting", () => {
+  status.textContent = "في انتظار لاعب آخر...";
+});
 
-    socket.on("startGame", (data) => {
-      mark = data.mark;
-      canPlay = (mark === "X");
-      status.textContent = "اللعبة بدأت! دورك: " + mark;
-    });
+socket.on("startGame", (data) => {
+  mark = data.mark;
+  status.textContent = `اللعبة بدأت! أنت تلعب: ${mark}`;
+});
 
-    socket.on("moveMade", ({ index, mark: m }) => {
-      const cell = board.children[index];
-      cell.textContent = m;
-      canPlay = (m !== mark);
-      if (!checkGameEnd()) {
-        status.textContent = canPlay ? "دورك" : "انتظر الخصم...";
-      }
-    });
+socket.on("yourTurn", (turn) => {
+  myTurn = turn;
+  status.textContent = turn ? "دورك الآن" : "انتظر خصمك...";
+});
 
-    socket.on("gameOver", ({ winner }) => {
-      if (winner) {
-        status.textContent = winner === mark ? "فزت!" : "خسرت!";
-      } else {
-        status.textContent = "تعادل!";
-      }
-      canPlay = false;
-    });
+socket.on("moveMade", ({ index, mark }) => {
+  board.children[index].textContent = mark;
+});
 
-    socket.on("playerLeft", () => {
-      status.textContent = "اللاعب الآخر غادر. انتظر لاعبا جديدا...";
-      for (let cell of board.children) cell.textContent = "";
-      canPlay = false;
-    });
+socket.on("gameOver", ({ winner }) => {
+  if (winner === null) {
+    status.textContent = "انتهت اللعبة: تعادل!";
+  } else {
+    status.textContent = `انتهت اللعبة! الفائز هو: ${winner}`;
+  }
+  myTurn = false;
+});
 
-    socket.on("full", () => {
-      status.textContent = "الغرفة ممتلئة، حاول لاحقًا.";
-    });
+socket.on("playerLeft", () => {
+  status.textContent = "اللاعب الآخر خرج، بانتظار لاعب جديد...";
+  [...board.children].forEach(c => c.textContent = "");
+});
 
-    board.addEventListener("click", (e) => {
-      const cell = e.target;
-      const index = cell.dataset.index;
-      if (!canPlay || cell.textContent) return;
-      socket.emit("makeMove", parseInt(index));
-    });
+socket.on("full", () => {
+  status.textContent = "الغرفة ممتلئة! الرجاء المحاولة لاحقًا.";
+});
+</script>
 
-    function checkGameEnd() {
-      let filled = 0;
-      for (let cell of board.children) if (cell.textContent) filled++;
-      return filled === 9;
-    }
-  </script>
 </body>
 </html>
