@@ -1,9 +1,13 @@
 const express = require("express");
-const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http);
+const http = require("http");
+const socketIo = require("socket.io");
+const path = require("path");
 
-app.use(express.static("public"));
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+app.use(express.static(path.join(__dirname, "public")));
 
 let waitingPlayer = null;
 
@@ -15,44 +19,45 @@ io.on("connection", (socket) => {
       const playerX = waitingPlayer;
       const playerO = socket;
 
-      playerX.mark = "X";
-      playerO.mark = "O";
-
       playerX.emit("startGame", { mark: "X" });
       playerO.emit("startGame", { mark: "O" });
 
+      // ربط اللاعبين معًا
       playerX.opponent = playerO;
       playerO.opponent = playerX;
 
-      playerX.emit("yourTurn", true);
-      playerO.emit("yourTurn", false);
-
+      // إزالة من قائمة الانتظار
       waitingPlayer = null;
+
+      console.log("بدأت لعبة بين", playerX.id, "و", playerO.id);
     } else {
       waitingPlayer = socket;
+      socket.emit("waiting");
+      console.log("لاعب ينتظر خصم:", socket.id);
     }
   });
 
-  socket.on("makeMove", (index) => {
+  socket.on("makeMove", (data) => {
     if (socket.opponent) {
-      socket.emit("moveMade", { index, mark: socket.mark });
-      socket.opponent.emit("moveMade", { index, mark: socket.mark });
-      socket.emit("yourTurn", false);
-      socket.opponent.emit("yourTurn", true);
+      socket.opponent.emit("opponentMove", data);
     }
   });
 
   socket.on("disconnect", () => {
+    console.log("لاعب خرج:", socket.id);
+
     if (waitingPlayer === socket) {
       waitingPlayer = null;
     }
+
     if (socket.opponent) {
-      socket.opponent.emit("playerLeft");
+      socket.opponent.emit("opponentLeft");
       socket.opponent.opponent = null;
     }
   });
 });
 
-http.listen(process.env.PORT || 3000, () => {
-  console.log("الخادم يعمل على المنفذ", process.env.PORT || 3000);
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`الخادم يعمل على المنفذ ${PORT}`);
 });
