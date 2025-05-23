@@ -1,87 +1,58 @@
 const express = require("express");
-const http = require("http");
-const socketIO = require("socket.io");
-
 const app = express();
-const server = http.createServer(app);
-const io = socketIO(server);
+const http = require("http").createServer(app);
+const io = require("socket.io")(http);
 
-const PORT = process.env.PORT || 10000;
+app.use(express.static("public"));
 
-app.use(express.static("public")); // تأكد أن ملفات HTML/CSS/JS موجودة بمجلد public
-
-let players = [];
-let currentTurn = "X";
-let board = Array(9).fill("");
-let moveCount = 0;
+let waitingPlayer = null;
 
 io.on("connection", (socket) => {
   console.log("لاعب متصل:", socket.id);
 
-  if (players.length >= 2) {
-    socket.emit("full");
-    return;
-  }
+  socket.on("findOpponent", () => {
+    if (waitingPlayer) {
+      const playerX = waitingPlayer;
+      const playerO = socket;
 
-  const mark = players.length === 0 ? "X" : "O";
-  players.push({ id: socket.id, mark });
-  socket.emit("startGame", { mark });
+      playerX.mark = "X";
+      playerO.mark = "O";
 
-  if (players.length === 2) {
-    io.to(players[0].id).emit("yourTurn", true);
-    io.to(players[1].id).emit("yourTurn", false);
-  } else {
-    socket.emit("waiting");
-  }
+      playerX.emit("startGame", { mark: "X" });
+      playerO.emit("startGame", { mark: "O" });
+
+      playerX.opponent = playerO;
+      playerO.opponent = playerX;
+
+      playerX.emit("yourTurn", true);
+      playerO.emit("yourTurn", false);
+
+      waitingPlayer = null;
+    } else {
+      waitingPlayer = socket;
+    }
+  });
 
   socket.on("makeMove", (index) => {
-    const player = players.find(p => p.id === socket.id);
-    if (!player || board[index] !== "" || player.mark !== currentTurn) return;
-
-    board[index] = player.mark;
-    moveCount++;
-    io.emit("moveMade", { index, mark: player.mark });
-
-    if (checkWinner(player.mark)) {
-      io.emit("gameOver", { winner: player.mark });
-      resetGame();
-    } else if (moveCount >= 9) {
-      io.emit("gameOver", { winner: null }); // تعادل
-      resetGame();
-    } else {
-      currentTurn = currentTurn === "X" ? "O" : "X";
-      players.forEach(p => {
-        io.to(p.id).emit("yourTurn", p.mark === currentTurn);
-      });
+    if (socket.opponent) {
+      socket.emit("moveMade", { index, mark: socket.mark });
+      socket.opponent.emit("moveMade", { index, mark: socket.mark });
+      socket.emit("yourTurn", false);
+      socket.opponent.emit("yourTurn", true);
     }
   });
 
   socket.on("disconnect", () => {
-    console.log("لاعب خرج:", socket.id);
-    players = players.filter(p => p.id !== socket.id);
-    io.emit("playerLeft");
-    resetGame();
+    if (waitingPlayer === socket) {
+      waitingPlayer = null;
+    }
+    if (socket.opponent) {
+      socket.opponent.emit("playerLeft");
+      socket.opponent.opponent = null;
+    }
   });
 });
 
-function resetGame() {
-  board = Array(9).fill("");
-  currentTurn = "X";
-  moveCount = 0;
-  players = [];
-}
-
-function checkWinner(mark) {
-  const winPatterns = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], // صفوف
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], // أعمدة
-    [0, 4, 8], [2, 4, 6]             // أقطار
-  ];
-  return winPatterns.some(pattern =>
-    pattern.every(i => board[i] === mark)
-  );
-}
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`الخادم يعمل على المنفذ ${PORT}`);
+http.listen(process.env.PORT || 3000, () => {
+  console.log("الخادم يعمل على المنفذ", process.env.PORT || 3000);
 });
