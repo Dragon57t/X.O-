@@ -1,91 +1,76 @@
 <!DOCTYPE html>
 <html lang="ar">
 <head>
-  <meta charset="UTF-8">
-  <title>XO Game</title>
+  <meta charset="UTF-8" />
+  <title>لعبة XO</title>
   <style>
-    body { text-align: center; font-family: sans-serif; direction: rtl; }
-    .board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; justify-content: center; margin-top: 20px; }
-    .cell {
-      width: 100px; height: 100px; font-size: 40px;
-      display: flex; align-items: center; justify-content: center;
-      border: 1px solid #333; cursor: pointer;
-    }
-    #board { display: none; }
-    .disabled { pointer-events: none; background: #eee; }
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+    #board { display: grid; grid-template-columns: repeat(3, 100px); grid-gap: 5px; margin: 20px auto; }
+    .cell { width: 100px; height: 100px; font-size: 36px; cursor: pointer; background: #f0f0f0; display: flex; align-items: center; justify-content: center; border: 1px solid #ccc; }
+    #status { margin-top: 20px; font-size: 20px; }
   </style>
 </head>
 <body>
+  <h1>XO لعبة</h1>
+  <button id="find">بحث عن خصم</button>
+  <div id="status">اضغط على زر "بحث عن خصم" لبدء اللعب</div>
+  <div id="board"></div>
 
-<h1>لعبة XO</h1>
-<p id="status">اضغط على "بحث عن خصم" للبدء</p>
-<button id="find">بحث عن خصم</button>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const board = document.getElementById("board");
+    const status = document.getElementById("status");
+    const findBtn = document.getElementById("find");
 
-<div class="board" id="board"></div>
+    let mark = "";
+    let myTurn = false;
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-const board = document.getElementById("board");
-const status = document.getElementById("status");
-const findBtn = document.getElementById("find");
+    // إنشاء الخانات
+    const cells = [];
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.index = i;
+      board.appendChild(cell);
+      cells.push(cell);
 
-let mark = "";
-let myTurn = false;
-
-for (let i = 0; i < 9; i++) {
-  const cell = document.createElement("div");
-  cell.classList.add("cell");
-  cell.dataset.index = i;
-  cell.addEventListener("click", () => {
-    if (myTurn && cell.textContent === "") {
-      socket.emit("makeMove", parseInt(cell.dataset.index));
+      cell.addEventListener("click", () => {
+        if (myTurn && cell.textContent === "") {
+          cell.textContent = mark;
+          socket.emit("makeMove", { index: i });
+          myTurn = false;
+          status.textContent = "دور الخصم...";
+        }
+      });
     }
-  });
-  board.appendChild(cell);
-}
 
-findBtn.onclick = () => {
-  socket.emit("findOpponent");
-  status.textContent = "في انتظار لاعب آخر...";
-  findBtn.style.display = "none";
-};
+    findBtn.onclick = () => {
+      socket.emit("findOpponent");
+      status.textContent = "جاري البحث عن خصم...";
+    };
 
-socket.on("startGame", (data) => {
-  mark = data.mark;
-  board.style.display = "grid";
-  status.textContent = `اللعبة بدأت! أنت: ${mark}`;
-});
+    socket.on("waiting", () => {
+      status.textContent = "في انتظار خصم...";
+    });
 
-socket.on("yourTurn", (turn) => {
-  myTurn = turn;
-  status.textContent = turn ? "دورك الآن" : "انتظر الخصم...";
-});
+    socket.on("startGame", (data) => {
+      mark = data.mark;
+      myTurn = (mark === "X");
+      status.textContent = `اللعبة بدأت! أنت ${mark}، ${myTurn ? "دورك" : "انتظر الخصم"}`;
+      cells.forEach(cell => cell.textContent = ""); // مسح اللوحة
+    });
 
-socket.on("moveMade", ({ index, mark }) => {
-  board.children[index].textContent = mark;
-});
+    socket.on("opponentMove", (data) => {
+      cells[data.index].textContent = mark === "X" ? "O" : "X";
+      myTurn = true;
+      status.textContent = "دورك!";
+    });
 
-socket.on("gameOver", ({ winner }) => {
-  if (winner === null) {
-    status.textContent = "تعادل!";
-  } else {
-    status.textContent = `الفائز هو: ${winner}`;
-  }
-  myTurn = false;
-});
-
-socket.on("playerLeft", () => {
-  status.textContent = "الخصم خرج. اضغط بحث عن خصم مجددًا.";
-  [...board.children].forEach(c => c.textContent = "");
-  board.style.display = "none";
-  findBtn.style.display = "inline-block";
-});
-
-socket.on("full", () => {
-  status.textContent = "الخدمة ممتلئة، حاول لاحقًا.";
-});
-</script>
-
+    socket.on("opponentLeft", () => {
+      status.textContent = "خرج الخصم. اضغط 'بحث عن خصم' للعب من جديد.";
+      myTurn = false;
+    });
+  </script>
 </body>
 </html>
