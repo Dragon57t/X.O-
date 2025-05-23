@@ -1,52 +1,47 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(__dirname + '/public'));
+app.use(express.static("public"));
 
-let players = [], board = Array(9).fill(null), turn = 'X';
+let waitingPlayer = null;
 
-io.on('connection', (socket) => {
-  if (players.length >= 2) return socket.disconnect();
+io.on("connection", (socket) => {
+  console.log("لاعب متصل:", socket.id);
 
-  players.push(socket);
-  const symbol = players.length === 1 ? 'X' : 'O';
-  socket.emit('game.begin', { symbol });
+  if (waitingPlayer) {
+    // إذا في لاعب ينتظر، نربطهم مع بعض
+    const room = `${waitingPlayer.id}#${socket.id}`;
+    socket.join(room);
+    waitingPlayer.join(room);
 
-  socket.on('make.move', (data) => {
-    if (board[data.index] || symbol !== turn) return;
+    // نرسل لكل واحد دوره
+    socket.emit("startGame", { mark: "O" });
+    waitingPlayer.emit("startGame", { mark: "X" });
 
-    board[data.index] = symbol;
-    turn = turn === 'X' ? 'O' : 'X';
-    io.emit('move.made', { index: data.index, symbol });
+    // ننسى اللاعب المنتظر
+    waitingPlayer = null;
+  } else {
+    // إذا مافي لاعب ينتظر، نخليه ينتظر
+    waitingPlayer = socket;
+    socket.emit("waiting");
+  }
 
-    if (checkWin()) {
-      io.emit('game.over', { message: `${symbol} wins!` });
-      resetGame();
-    } else if (board.every(Boolean)) {
-      io.emit('game.over', { message: 'Draw!' });
-      resetGame();
+  socket.on("move", (data) => {
+    socket.to(data.room).emit("move", data);
+  });
+
+  socket.on("disconnect", () => {
+    if (waitingPlayer === socket) {
+      waitingPlayer = null;
     }
   });
-
-  socket.on('disconnect', () => {
-    players = players.filter(p => p !== socket);
-    resetGame();
-  });
-
-  function resetGame() {
-    board = Array(9).fill(null);
-    turn = 'X';
-  }
-
-  function checkWin() {
-    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    return lines.some(([a, b, c]) => board[a] && board[a] === board[b] && board[a] === board[c]);
-  }
 });
 
-server.listen(process.env.PORT || 3000, () => console.log('Server running...'));
+server.listen(3000, () => {
+  console.log("الخادم يعمل على المنفذ 3000");
+});
