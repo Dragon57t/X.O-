@@ -1,56 +1,81 @@
-const express = require('express');
+const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
+const path = require("path");
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const server = http.createServer(app);
+const io = socketIo(server);
 
-// تخدم ملفات HTML و CSS و JS من مجلد public
-app.use(express.static('public'));
+const players = [];
+let board = Array(9).fill(null);
+let currentTurn = "X";
 
-let waitingPlayer = null;
+app.use(express.static(path.join(__dirname, "public")));
 
-io.on('connection', (socket) => {
-  console.log('لاعب جديد متصل:', socket.id);
+io.on("connection", (socket) => {
+  console.log("شخص اتصل: " + socket.id);
 
-  if (waitingPlayer) {
-    // فيه لاعب ينتظر - نبدأ اللعبة
-    const playerX = waitingPlayer;
-    const playerO = socket;
-
-    playerX.emit('startGame', { mark: 'X' });
-    playerO.emit('startGame', { mark: 'O' });
-
-    // ربط الاثنين مع بعض
-    playerX.opponent = playerO;
-    playerO.opponent = playerX;
-
-    waitingPlayer = null;
-  } else {
-    // ما في أحد ينتظر - ننتظره
-    waitingPlayer = socket;
-    socket.emit('waiting');
+  if (players.length >= 2) {
+    socket.emit("full");
+    return;
   }
 
-  // عند اللعب
-  socket.on('makeMove', (data) => {
-    if (socket.opponent) {
-      socket.opponent.emit('moveMade', data);
+  const mark = players.length === 0 ? "X" : "O";
+  players.push({ id: socket.id, mark });
+  socket.emit("waiting");
+
+  if (players.length === 2) {
+    io.emit("startGame", { mark: "X" });
+  }
+
+  socket.on("makeMove", (index) => {
+    const player = players.find(p => p.id === socket.id);
+    if (!player || board[index] || currentTurn !== player.mark) return;
+
+    board[index] = player.mark;
+    currentTurn = currentTurn === "X" ? "O" : "X";
+
+    io.emit("moveMade", { index, mark: player.mark });
+
+    const winner = checkWinner();
+    if (winner) {
+      io.emit("gameOver", { winner });
+      board = Array(9).fill(null); // reset
+      currentTurn = "X";
+    } else if (board.every(cell => cell)) {
+      io.emit("gameOver", { winner: null }); // تعادل
+      board = Array(9).fill(null);
+      currentTurn = "X";
     }
   });
 
-  // عند قطع الاتصال
-  socket.on('disconnect', () => {
-    console.log('لاعب خرج:', socket.id);
-    if (socket.opponent) {
-      socket.opponent.emit('opponentLeft');
-    }
-    if (waitingPlayer === socket) {
-      waitingPlayer = null;
-    }
+  socket.on("disconnect", () => {
+    console.log("شخص خرج: " + socket.id);
+    const index = players.findIndex(p => p.id === socket.id);
+    if (index !== -1) players.splice(index, 1);
+    board = Array(9).fill(null);
+    currentTurn = "X";
+    io.emit("playerLeft");
   });
 });
 
-// الاستماع على المنفذ الذي تطلبه Render
-const PORT = process.env.PORT || 3000;
-http.listen(PORT, '0.0.0.0', () => {
+function checkWinner() {
+  const winPatterns = [
+    [0,1,2],[3,4,5],[6,7,8],
+    [0,3,6],[1,4,7],[2,5,8],
+    [0,4,8],[2,4,6]
+  ];
+  for (let pattern of winPatterns) {
+    const [a, b, c] = pattern;
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return board[a];
+    }
+  }
+  return null;
+}
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`الخادم يعمل على المنفذ ${PORT}`);
 });
