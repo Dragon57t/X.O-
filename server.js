@@ -1,47 +1,56 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-
+const express = require('express');
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
 
-app.use(express.static("public"));
+// تخدم ملفات HTML و CSS و JS من مجلد public
+app.use(express.static('public'));
 
 let waitingPlayer = null;
 
-io.on("connection", (socket) => {
-  console.log("لاعب متصل:", socket.id);
+io.on('connection', (socket) => {
+  console.log('لاعب جديد متصل:', socket.id);
 
   if (waitingPlayer) {
-    // إذا في لاعب ينتظر، نربطهم مع بعض
-    const room = `${waitingPlayer.id}#${socket.id}`;
-    socket.join(room);
-    waitingPlayer.join(room);
+    // فيه لاعب ينتظر - نبدأ اللعبة
+    const playerX = waitingPlayer;
+    const playerO = socket;
 
-    // نرسل لكل واحد دوره
-    socket.emit("startGame", { mark: "O" });
-    waitingPlayer.emit("startGame", { mark: "X" });
+    playerX.emit('startGame', { mark: 'X' });
+    playerO.emit('startGame', { mark: 'O' });
 
-    // ننسى اللاعب المنتظر
+    // ربط الاثنين مع بعض
+    playerX.opponent = playerO;
+    playerO.opponent = playerX;
+
     waitingPlayer = null;
   } else {
-    // إذا مافي لاعب ينتظر، نخليه ينتظر
+    // ما في أحد ينتظر - ننتظره
     waitingPlayer = socket;
-    socket.emit("waiting");
+    socket.emit('waiting');
   }
 
-  socket.on("move", (data) => {
-    socket.to(data.room).emit("move", data);
+  // عند اللعب
+  socket.on('makeMove', (data) => {
+    if (socket.opponent) {
+      socket.opponent.emit('moveMade', data);
+    }
   });
 
-  socket.on("disconnect", () => {
+  // عند قطع الاتصال
+  socket.on('disconnect', () => {
+    console.log('لاعب خرج:', socket.id);
+    if (socket.opponent) {
+      socket.opponent.emit('opponentLeft');
+    }
     if (waitingPlayer === socket) {
       waitingPlayer = null;
     }
   });
 });
 
-server.listen(3000, () => {
-  console.log("الخادم يعمل على المنفذ 3000");
+// الاستماع على المنفذ الذي تطلبه Render
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, '0.0.0.0', () => {
+  console.log(`الخادم يعمل على المنفذ ${PORT}`);
 });
