@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>X.O Game</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
+    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; margin: 50px auto; }
+    .cell { width: 100px; height: 100px; font-size: 2em; background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    #status { font-size: 1.2em; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>X.O 1v1</h1>
+  <div id="board"></div>
+  <div id="status">Waiting for opponent...</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const board = document.getElementById('board');
+    const status = document.getElementById('status');
+    let symbol = '';
+    let myTurn = false;
+
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.index = i;
+      board.appendChild(cell);
+    }
+
+    socket.on('game.begin', (data) => {
+      symbol = data.symbol;
+      myTurn = symbol === 'X';
+      status.textContent = `You are ${symbol}. ${myTurn ? 'Your turn' : 'Opponent\'s turn'}`;
+    });
+
+    socket.on('move.made', (data) => {
+      board.children[data.index].textContent = data.symbol;
+      myTurn = data.symbol !== symbol;
+      status.textContent = myTurn ? 'Your turn' : 'Opponent\'s turn';
+    });
+
+    socket.on('game.over', (data) => {
+      status.textContent = data.message;
+      myTurn = false;
+    });
+
+    board.addEventListener('click', (e) => {
+      if (!myTurn || e.target.textContent) return;
+      const index = e.target.dataset.index;
+      socket.emit('make.move', { index });
+    });
+  </script>
+</body>
+</html>
