@@ -1,87 +1,92 @@
 <!DOCTYPE html>
 <html lang="ar">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>لعبة XO</title>
+  <meta charset="UTF-8">
+  <title>XO Multiplayer</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      background: #f5f5f5;
-    }
-    h1 {
-      color: #333;
-    }
-    #board {
-      display: grid;
-      grid-template-columns: repeat(3, 100px);
-      gap: 5px;
-      justify-content: center;
-      margin-top: 30px;
-    }
+    body { font-family: Arial; text-align: center; background: #f0f0f0; }
+    h1 { margin-top: 20px; }
+    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; justify-content: center; margin: 20px auto; }
     .cell {
-      width: 100px;
-      height: 100px;
-      font-size: 2em;
-      background: #fff;
-      border: 2px solid #ccc;
+      width: 100px; height: 100px;
+      background: white; border: 2px solid #ccc;
+      font-size: 40px; display: flex;
+      align-items: center; justify-content: center;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
-    .cell:hover {
-      background: #eee;
-    }
+    #status { margin-top: 20px; font-size: 18px; }
   </style>
 </head>
 <body>
-  <h1>لعبة XO 1 ضد 1</h1>
-  <div id="board">
-    <div class="cell" data-index="0"></div>
-    <div class="cell" data-index="1"></div>
-    <div class="cell" data-index="2"></div>
-    <div class="cell" data-index="3"></div>
-    <div class="cell" data-index="4"></div>
-    <div class="cell" data-index="5"></div>
-    <div class="cell" data-index="6"></div>
-    <div class="cell" data-index="7"></div>
-    <div class="cell" data-index="8"></div>
-  </div>
+  <h1>لعبة XO جماعية</h1>
+  <div id="status">جاري الاتصال بالخادم...</div>
+  <div id="board"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    let mark = null;
-    let myTurn = false;
+    const board = document.getElementById("board");
+    const status = document.getElementById("status");
+    let mark = "";
+    let canPlay = false;
+
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("div");
+      cell.classList.add("cell");
+      cell.dataset.index = i;
+      board.appendChild(cell);
+    }
 
     socket.on("waiting", () => {
-      alert("في انتظار لاعب آخر...");
+      status.textContent = "في انتظار لاعب آخر...";
     });
 
     socket.on("startGame", (data) => {
       mark = data.mark;
-      myTurn = (mark === "X");
-      alert("اللعبة بدأت! دورك: " + (myTurn ? "نعم" : "لا"));
+      canPlay = (mark === "X");
+      status.textContent = "اللعبة بدأت! دورك: " + mark;
     });
 
-    socket.on("move", ({ index, mark: m }) => {
-      document.querySelector(`[data-index='${index}']`).textContent = m;
-      myTurn = true;
+    socket.on("moveMade", ({ index, mark: m }) => {
+      const cell = board.children[index];
+      cell.textContent = m;
+      canPlay = (m !== mark);
+      if (!checkGameEnd()) {
+        status.textContent = canPlay ? "دورك" : "انتظر الخصم...";
+      }
     });
 
-    const cells = document.querySelectorAll(".cell");
-    cells.forEach(cell => {
-      cell.addEventListener("click", () => {
-        if (!myTurn || cell.textContent !== "") return;
-
-        const index = cell.getAttribute("data-index");
-        cell.textContent = mark;
-        socket.emit("move", { index, mark });
-        myTurn = false;
-      });
+    socket.on("gameOver", ({ winner }) => {
+      if (winner) {
+        status.textContent = winner === mark ? "فزت!" : "خسرت!";
+      } else {
+        status.textContent = "تعادل!";
+      }
+      canPlay = false;
     });
+
+    socket.on("playerLeft", () => {
+      status.textContent = "اللاعب الآخر غادر. انتظر لاعبا جديدا...";
+      for (let cell of board.children) cell.textContent = "";
+      canPlay = false;
+    });
+
+    socket.on("full", () => {
+      status.textContent = "الغرفة ممتلئة، حاول لاحقًا.";
+    });
+
+    board.addEventListener("click", (e) => {
+      const cell = e.target;
+      const index = cell.dataset.index;
+      if (!canPlay || cell.textContent) return;
+      socket.emit("makeMove", parseInt(index));
+    });
+
+    function checkGameEnd() {
+      let filled = 0;
+      for (let cell of board.children) if (cell.textContent) filled++;
+      return filled === 9;
+    }
   </script>
 </body>
 </html>
