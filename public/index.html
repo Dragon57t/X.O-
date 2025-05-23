@@ -1,57 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>X.O Game</title>
+  <title>لعبة XO</title>
   <style>
-    body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
-    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; margin: 50px auto; }
-    .cell { width: 100px; height: 100px; font-size: 2em; background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    #status { font-size: 1.2em; margin-top: 20px; }
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      gap: 5px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    .cell {
+      width: 100px;
+      height: 100px;
+      font-size: 2em;
+      background: #fff;
+      border: 2px solid #ccc;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cell:hover {
+      background: #eee;
+    }
   </style>
 </head>
 <body>
-  <h1>X.O 1v1</h1>
-  <div id="board"></div>
-  <div id="status">Waiting for opponent...</div>
+  <h1>لعبة XO 1 ضد 1</h1>
+  <div id="board">
+    <div class="cell" data-index="0"></div>
+    <div class="cell" data-index="1"></div>
+    <div class="cell" data-index="2"></div>
+    <div class="cell" data-index="3"></div>
+    <div class="cell" data-index="4"></div>
+    <div class="cell" data-index="5"></div>
+    <div class="cell" data-index="6"></div>
+    <div class="cell" data-index="7"></div>
+    <div class="cell" data-index="8"></div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const board = document.getElementById('board');
-    const status = document.getElementById('status');
-    let symbol = '';
+    let mark = null;
     let myTurn = false;
 
-    for (let i = 0; i < 9; i++) {
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      cell.dataset.index = i;
-      board.appendChild(cell);
-    }
-
-    socket.on('game.begin', (data) => {
-      symbol = data.symbol;
-      myTurn = symbol === 'X';
-      status.textContent = `You are ${symbol}. ${myTurn ? 'Your turn' : 'Opponent\'s turn'}`;
+    socket.on("waiting", () => {
+      alert("في انتظار لاعب آخر...");
     });
 
-    socket.on('move.made', (data) => {
-      board.children[data.index].textContent = data.symbol;
-      myTurn = data.symbol !== symbol;
-      status.textContent = myTurn ? 'Your turn' : 'Opponent\'s turn';
+    socket.on("startGame", (data) => {
+      mark = data.mark;
+      myTurn = (mark === "X");
+      alert("اللعبة بدأت! دورك: " + (myTurn ? "نعم" : "لا"));
     });
 
-    socket.on('game.over', (data) => {
-      status.textContent = data.message;
-      myTurn = false;
+    socket.on("move", ({ index, mark: m }) => {
+      document.querySelector(`[data-index='${index}']`).textContent = m;
+      myTurn = true;
     });
 
-    board.addEventListener('click', (e) => {
-      if (!myTurn || e.target.textContent) return;
-      const index = e.target.dataset.index;
-      socket.emit('make.move', { index });
+    const cells = document.querySelectorAll(".cell");
+    cells.forEach(cell => {
+      cell.addEventListener("click", () => {
+        if (!myTurn || cell.textContent !== "") return;
+
+        const index = cell.getAttribute("data-index");
+        cell.textContent = mark;
+        socket.emit("move", { index, mark });
+        myTurn = false;
+      });
     });
   </script>
 </body>
